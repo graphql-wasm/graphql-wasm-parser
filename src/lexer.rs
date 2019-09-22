@@ -468,6 +468,10 @@ mod tests {
     test_token!(block_string_triple_quote_escaped r#""""string\"""""""# BLOCK_STRING r#"string""""#);
     test_token!(bang "!" BANG);
     test_token!(equals "=" EQUALS);
+    test_token!(float_e_notation "123e4" FLOAT "123e4");
+    test_token!(float_e_notation_2 "123E4" FLOAT "123E4");
+    test_token!(float_e_notation_3 "57.123E4" FLOAT "57.123E4");
+    test_token!(float_e_notation_4 "26.123e4" FLOAT "26.123e4");
 
     #[test]
     fn parse_simple_query() {
