@@ -112,7 +112,7 @@ pub struct DirectiveDefinition {
     pub arguments: Vec<InputValueDefinition>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone,Copy, PartialEq, Serialize)]
 pub enum DirectiveLocation {
     QUERY,
     MUTATION,

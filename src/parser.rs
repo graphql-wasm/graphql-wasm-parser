@@ -3,6 +3,8 @@ use crate::lexer::*;
 use Option::*;
 use Result::*;
 use TokenKind::*;
+use TypeReference::*;
+
 
 #[derive(Debug)]
 pub struct ParsingError {
@@ -39,7 +41,7 @@ fn parse_definition(lexer: &mut Lexer) -> Result<Definition, ParsingError> {
             "schema" | "scalar" | "type" | "interface" | "union" | "enum" | "input"
             | "directive" => return parse_type_system_definition(lexer),
             "extend" => return parse_type_system_extension(lexer),
-            _ => return Err(ParsingError::new("unexpected")),
+            value => return Err(ParsingError::new(&format!("unexpected string '{}'", value))),
         }
     } else if peek(lexer, BRACE_L) {
         return parse_executable_definition(lexer);
@@ -68,7 +70,12 @@ fn parse_type_system_definition(lexer: &mut Lexer) -> Result<Definition, Parsing
         "enum" => return parse_enum_type_definition(lexer),
         "input" => return parse_input_object_type_definition(lexer),
         "directive" => return parse_directive_definition(lexer),
-        _ => return Err(ParsingError::new("unexpected")),
+        value => {
+            return Err(ParsingError::new(&format!(
+                "unexpected {} for type system definition",
+                value
+            )))
+        }
     }
 }
 
@@ -317,6 +324,7 @@ fn parse_input_fields_definition(
 }
 
 fn parse_directive_definition(lexer: &mut Lexer) -> Result<Definition, ParsingError> {
+    println!("parse directive def");
     let description = parse_description(lexer)?;
     expect_keyword(lexer, "directive")?;
     expect_token(lexer, AT)?;
@@ -917,7 +925,6 @@ mod tests {
     fn parse_simple_query() {
         let mut lexer = Lexer::new("{foo}");
         let result = parse(&mut lexer);
-        println!("{:?}", result);
         assert!(result.is_ok());
         let field = Field {
             name: String::from("foo"),
@@ -999,16 +1006,80 @@ mod tests {
         let definition = &result.unwrap().definitions[0];
         let schema_definition = enum_field!(Definition Schema definition);
         let op_type_def = &schema_definition.operation_type_definitions[0];
-        // let field_definiton = &object_type_definition.fields[0];
         assert_eq!(op_type_def.operation, OperationType::Query);
         assert_eq!(op_type_def.type_name, "MyQuery");
+    }
+    #[test]
+    fn parse_interface_definition() {
+        let mut lexer = Lexer::new("interface MyI { field : Int }");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let interface_definition = enum_field!(Definition InterfaceType definition);
+        assert_eq!(interface_definition.name, "MyI");
+        let field_definiton = &interface_definition.fields[0];
+        assert_eq!(field_definiton.name, "field");
+        assert_eq!(
+            field_definiton.type_reference,
+            TypeReference::NamedType(String::from("Int"))
+        );
+    }
+
+    #[test]
+    fn parse_enum_definition() {
+        let mut lexer = Lexer::new("enum MyEnum { FOO, BAR }");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let enum_definition = enum_field!(Definition EnumType definition);
+        assert_eq!(enum_definition.name, "MyEnum");
+        let value1 = &enum_definition.values[0];
+        let value2 = &enum_definition.values[1];
+        assert_eq!(value1.name, "FOO");
+        assert_eq!(value2.name, "BAR");
+    }
+
+    #[test]
+    fn parse_union_definition() {
+        let mut lexer = Lexer::new("union MyUnion = A | B | C");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let union_definition = enum_field!(Definition UnionType definition);
+        assert_eq!(union_definition.name, "MyUnion");
+        let type1 = &union_definition.types[0];
+        let type2 = &union_definition.types[1];
+        let type3 = &union_definition.types[2];
+        assert_eq!(type1, "A");
+        assert_eq!(type2, "B");
+        assert_eq!(type3, "C");
+    }
+
+    #[test]
+    fn parse_directive_definition() {
+        let mut lexer = Lexer::new("directive @MyDirective on FIELD_DEFINITION");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let directive_definition = enum_field!(Definition Directive definition);
+        assert_eq!(directive_definition.name, "MyDirective");
+        let location = directive_definition.locations[0];
+        assert_eq!(location, DirectiveLocation::FIELD_DEFINITION);
+    }
+    #[test]
+    fn parse_input_definition() {
+        let mut lexer = Lexer::new("input MyInput {field: [Bool!]!}");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let input_definition = enum_field!(Definition InputObjectType definition);
+        assert_eq!(input_definition.name, "MyInput");
+        let field = &input_definition.fields[0];
+        assert_eq!(field.name, "field");
+        let non_null_bool = NonNullType(Box::new(NamedType(String::from("Bool"))));
+        let type_ref = NonNullType(Box::new(ListType(Box::new(non_null_bool))));
+        assert_eq!(field.type_reference, type_ref);
     }
 
     #[test]
     fn parse_two_level_query() {
         let mut lexer = Lexer::new("{foo{bar}}");
         let result = parse(&mut lexer);
-        println!("result {:?}", result);
         assert!(result.is_ok());
         let bar = Field {
             name: String::from("bar"),
@@ -1047,7 +1118,6 @@ mod tests {
     fn parse_operation_name() {
         let mut lexer = Lexer::new("query myQuery {foo}");
         let result = parse(&mut lexer);
-        println!("result {:?}", result);
         assert!(result.is_ok());
         let document = result.unwrap();
         if let Definition::Operation(operation_definition) = &document.definitions[0] {
