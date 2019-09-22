@@ -5,7 +5,6 @@ use Result::*;
 use TokenKind::*;
 use TypeReference::*;
 
-
 #[derive(Debug)]
 pub struct ParsingError {
     pub message: String,
@@ -90,6 +89,7 @@ fn parse_directives(lexer: &mut Lexer, is_const: bool) -> Result<Vec<Directive>,
     Ok(result)
 }
 fn parse_directive(lexer: &mut Lexer, is_const: bool) -> Result<Directive, ParsingError> {
+    expect_token(lexer, AT)?;
     let name = parse_name(lexer)?;
     let arguments = parse_arguments(lexer, is_const)?;
     Ok(Directive { name, arguments })
@@ -324,7 +324,6 @@ fn parse_input_fields_definition(
 }
 
 fn parse_directive_definition(lexer: &mut Lexer) -> Result<Definition, ParsingError> {
-    println!("parse directive def");
     let description = parse_description(lexer)?;
     expect_keyword(lexer, "directive")?;
     expect_token(lexer, AT)?;
@@ -998,7 +997,7 @@ mod tests {
             TypeReference::NamedType(String::from("String"))
         );
     }
-        #[test]
+    #[test]
     fn parse_object_extension() {
         let mut lexer = Lexer::new("extend type Foo{bar: String}");
         let result = parse(&mut lexer);
@@ -1012,7 +1011,6 @@ mod tests {
             TypeReference::NamedType(String::from("String"))
         );
     }
-
 
     #[test]
     fn parse_schema_definition() {
@@ -1164,19 +1162,19 @@ mod tests {
         assert_eq!(scalar_type.name, "MyScalar");
     }
 
-    // #[test]
-    // fn parse_scalar_extension() {
-    //     let mut lexer = Lexer::new("extend scalar MyScalar @MyDirective");
-    //     let result = parse(&mut lexer);
-    //     let definition = &result.unwrap().definitions[0];
-    //     let scalar_type = enum_field!(Definition ScalarTypeExtension definition);
-    //     assert_eq!(scalar_type.name, "MyScalar");
-    //     let directive = Directive {
-    //         name: String::from("MyDirective"),
-    //         arguments: Vec::new()
-    //     };
-    //     assert_eq!(scalar_type.directives, vec![directive]);
-    // }
+    #[test]
+    fn parse_scalar_extension() {
+        let mut lexer = Lexer::new("extend scalar MyScalar @MyDirective");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let scalar_type = enum_field!(Definition ScalarTypeExtension definition);
+        assert_eq!(scalar_type.name, "MyScalar");
+        let directive = Directive {
+            name: String::from("MyDirective"),
+            arguments: Vec::new(),
+        };
+        assert_eq!(scalar_type.directives, vec![directive]);
+    }
 
     #[test]
     fn parse_two_level_query() {
