@@ -453,7 +453,7 @@ fn parse_scalar_type_extension(lexer: &mut Lexer) -> Result<Definition, ParsingE
     let name = parse_name(lexer)?;
     let directives = parse_directives(lexer, true)?;
     if directives.len() == 0 {
-        return Err(ParsingError::new("unexpected"));
+        return Err(ParsingError::new("'extend scalar' requires directives"));
     };
     Ok(Definition::ScalarTypeExtension(ScalarTypeExtension {
         directives,
@@ -998,6 +998,21 @@ mod tests {
             TypeReference::NamedType(String::from("String"))
         );
     }
+        #[test]
+    fn parse_object_extension() {
+        let mut lexer = Lexer::new("extend type Foo{bar: String}");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let object_type_extension = enum_field!(Definition ObjectTypeExtension definition);
+        assert_eq!(object_type_extension.name, "Foo");
+        let field_definiton = &object_type_extension.fields[0];
+        assert_eq!(field_definiton.name, "bar");
+        assert_eq!(
+            field_definiton.type_reference,
+            TypeReference::NamedType(String::from("String"))
+        );
+    }
+
 
     #[test]
     fn parse_schema_definition() {
@@ -1009,6 +1024,17 @@ mod tests {
         assert_eq!(op_type_def.operation, OperationType::Query);
         assert_eq!(op_type_def.type_name, "MyQuery");
     }
+
+    #[test]
+    fn parse_schema_extension() {
+        let mut lexer = Lexer::new("extend schema { mutation: MyMutation}");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let schema_extension = enum_field!(Definition SchemaExtension definition);
+        let op_type_def = &schema_extension.operation_type_definitions[0];
+        assert_eq!(op_type_def.operation, OperationType::Mutation);
+        assert_eq!(op_type_def.type_name, "MyMutation");
+    }
     #[test]
     fn parse_interface_definition() {
         let mut lexer = Lexer::new("interface MyI { field : Int }");
@@ -1017,6 +1043,21 @@ mod tests {
         let interface_definition = enum_field!(Definition InterfaceType definition);
         assert_eq!(interface_definition.name, "MyI");
         let field_definiton = &interface_definition.fields[0];
+        assert_eq!(field_definiton.name, "field");
+        assert_eq!(
+            field_definiton.type_reference,
+            TypeReference::NamedType(String::from("Int"))
+        );
+    }
+
+    #[test]
+    fn parse_interface_extension() {
+        let mut lexer = Lexer::new("extend interface MyI { field : Int }");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let interface_extension = enum_field!(Definition InterfaceTypeExtension definition);
+        assert_eq!(interface_extension.name, "MyI");
+        let field_definiton = &interface_extension.fields[0];
         assert_eq!(field_definiton.name, "field");
         assert_eq!(
             field_definiton.type_reference,
@@ -1038,6 +1079,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_enum_extension() {
+        let mut lexer = Lexer::new("extend enum MyEnum { FOO, BAR }");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let enum_extension = enum_field!(Definition EnumTypeExtension definition);
+        assert_eq!(enum_extension.name, "MyEnum");
+        let value1 = &enum_extension.values[0];
+        let value2 = &enum_extension.values[1];
+        assert_eq!(value1.name, "FOO");
+        assert_eq!(value2.name, "BAR");
+    }
+
+    #[test]
     fn parse_union_definition() {
         let mut lexer = Lexer::new("union MyUnion = A | B | C");
         let result = parse(&mut lexer);
@@ -1053,6 +1107,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_union_extension() {
+        let mut lexer = Lexer::new("extend union MyUnion = A");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let union_extension = enum_field!(Definition UnionTypeExtension definition);
+        assert_eq!(union_extension.name, "MyUnion");
+        let type1 = &union_extension.types[0];
+        assert_eq!(type1, "A");
+    }
+
+    #[test]
     fn parse_directive_definition() {
         let mut lexer = Lexer::new("directive @MyDirective on FIELD_DEFINITION");
         let result = parse(&mut lexer);
@@ -1062,6 +1127,7 @@ mod tests {
         let location = directive_definition.locations[0];
         assert_eq!(location, DirectiveLocation::FIELD_DEFINITION);
     }
+
     #[test]
     fn parse_input_definition() {
         let mut lexer = Lexer::new("input MyInput {field: [Bool!]!}");
@@ -1075,6 +1141,42 @@ mod tests {
         let type_ref = NonNullType(Box::new(ListType(Box::new(non_null_bool))));
         assert_eq!(field.type_reference, type_ref);
     }
+
+    #[test]
+    fn parse_input_extension() {
+        let mut lexer = Lexer::new("extend input MyInput {field: Bool!}");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let input_extension = enum_field!(Definition InputObjectTypeExtension definition);
+        assert_eq!(input_extension.name, "MyInput");
+        let field = &input_extension.fields[0];
+        assert_eq!(field.name, "field");
+        let type_ref = NonNullType(Box::new(NamedType(String::from("Bool"))));
+        assert_eq!(field.type_reference, type_ref);
+    }
+
+    #[test]
+    fn parse_scalar_definition() {
+        let mut lexer = Lexer::new("scalar MyScalar");
+        let result = parse(&mut lexer);
+        let definition = &result.unwrap().definitions[0];
+        let scalar_type = enum_field!(Definition ScalarType definition);
+        assert_eq!(scalar_type.name, "MyScalar");
+    }
+
+    // #[test]
+    // fn parse_scalar_extension() {
+    //     let mut lexer = Lexer::new("extend scalar MyScalar @MyDirective");
+    //     let result = parse(&mut lexer);
+    //     let definition = &result.unwrap().definitions[0];
+    //     let scalar_type = enum_field!(Definition ScalarTypeExtension definition);
+    //     assert_eq!(scalar_type.name, "MyScalar");
+    //     let directive = Directive {
+    //         name: String::from("MyDirective"),
+    //         arguments: Vec::new()
+    //     };
+    //     assert_eq!(scalar_type.directives, vec![directive]);
+    // }
 
     #[test]
     fn parse_two_level_query() {
