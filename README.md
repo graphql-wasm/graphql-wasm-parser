@@ -1,6 +1,6 @@
-# Webassembly GraphQL parser
+# WebAssembly GraphQL parser
 
-GraphQL parser in webassembly, compiled from Rust.
+[GraphQL](https://graphql.org) parser in [WebAssembly](https://webassembly.org), compiled from [Rust](https://www.rust-lang.org).
 
 ## Status: experimental
 
