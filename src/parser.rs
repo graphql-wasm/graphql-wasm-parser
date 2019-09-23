@@ -1219,13 +1219,10 @@ mod tests {
         let mut lexer = Lexer::new("query myQuery {foo}");
         let result = parse(&mut lexer);
         assert!(result.is_ok());
-        let document = result.unwrap();
-        if let Definition::Operation(operation_definition) = &document.definitions[0] {
-            assert_eq!(operation_definition.operation_type, OperationType::Query);
-            assert_eq!(operation_definition.name.as_ref().unwrap(), "myQuery");
-        } else {
-            assert!(false);
-        }
+        let definition = &result.unwrap().definitions[0];
+        let operation_definition = enum_field!(Definition Operation definition);
+        assert_eq!(operation_definition.operation_type, OperationType::Query);
+        assert_eq!(operation_definition.name.as_ref().unwrap(), "myQuery");
     }
 
     #[test]
@@ -1233,22 +1230,19 @@ mod tests {
         let mut lexer = Lexer::new(r#"query myQuery($var1: String = "hello") {foo}"#);
         let result = parse(&mut lexer);
         assert!(result.is_ok());
-        let document = result.unwrap();
-        if let Definition::Operation(operation_definition) = &document.definitions[0] {
-            assert_eq!(operation_definition.variable_definitions.len(), 1);
-            let var_def = &operation_definition.variable_definitions[0];
-            assert_eq!(var_def.name, "var1");
-            assert_eq!(
-                var_def.type_reference,
-                TypeReference::NamedType(String::from("String"))
-            );
-            assert_eq!(
-                var_def.default_value.as_ref().unwrap(),
-                &Value::StringValue(String::from("hello"))
-            );
-        } else {
-            assert!(false);
-        }
+        let definition = &result.unwrap().definitions[0];
+        let operation_definition = enum_field!(Definition Operation definition);
+        assert_eq!(operation_definition.variable_definitions.len(), 1);
+        let var_def = &operation_definition.variable_definitions[0];
+        assert_eq!(var_def.name, "var1");
+        assert_eq!(
+            var_def.type_reference,
+            TypeReference::NamedType(String::from("String"))
+        );
+        assert_eq!(
+            var_def.default_value.as_ref().unwrap(),
+            &Value::StringValue(String::from("hello"))
+        );
     }
 
     #[test]
@@ -1256,21 +1250,18 @@ mod tests {
         let mut lexer = Lexer::new(r#"query myQuery($var1: InputObject = {field: "hello"}) {foo}"#);
         let result = parse(&mut lexer);
         assert!(result.is_ok());
-        let document = result.unwrap();
-        if let Definition::Operation(operation_definition) = &document.definitions[0] {
-            assert_eq!(operation_definition.variable_definitions.len(), 1);
-            let var_def = &operation_definition.variable_definitions[0];
-            let default_value = var_def.default_value.as_ref().unwrap();
-            let object_field = ObjectField {
-                name: String::from("field"),
-                value: Value::StringValue(String::from("hello")),
-            };
-            assert_eq!(
-                default_value,
-                &Value::ObjectValue(Box::new(vec![object_field]))
-            );
-        } else {
-            assert!(false);
-        }
+        let definition = &result.unwrap().definitions[0];
+        let operation_definition = enum_field!(Definition Operation definition);
+        assert_eq!(operation_definition.variable_definitions.len(), 1);
+        let var_def = &operation_definition.variable_definitions[0];
+        let default_value = var_def.default_value.as_ref().unwrap();
+        let object_field = ObjectField {
+            name: String::from("field"),
+            value: Value::StringValue(String::from("hello")),
+        };
+        assert_eq!(
+            default_value,
+            &Value::ObjectValue(Box::new(vec![object_field]))
+        );
     }
 }
