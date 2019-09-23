@@ -472,6 +472,12 @@ mod tests {
     test_token!(float_e_notation_2 "123E4" FLOAT "123E4");
     test_token!(float_e_notation_3 "57.123E4" FLOAT "57.123E4");
     test_token!(float_e_notation_4 "26.123e4" FLOAT "26.123e4");
+    test_token!(float_e_notation_5 "123e-4" FLOAT "123e-4");
+    test_token!(float_e_notation_6 "-1.123e4" FLOAT "-1.123e4");
+    test_token!(float_e_notation_7 "-1.123e-4" FLOAT "-1.123e-4");
+    test_token!(float_e_notation_8 "-1.123E-4" FLOAT "-1.123E-4");
+    test_token!(float_e_notation_9 "-1.123E+4" FLOAT "-1.123E+4");
+    test_token!(float_e_notation_10 "-1.123e456" FLOAT "-1.123e456");
 
     #[test]
     fn parse_simple_query() {
