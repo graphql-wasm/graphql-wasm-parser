@@ -48,7 +48,7 @@ pub struct Token {
     pub value: Option<String>,
 }
 
-impl<'a> Token {
+impl Token {
     pub fn simple_token(kind: TokenKind, index: usize) -> Token {
         Token {
             kind,
@@ -58,8 +58,8 @@ impl<'a> Token {
         }
     }
 
-    pub fn get_value(self) -> String {
-        self.value.as_ref().unwrap().clone()
+    pub fn get_value<'a>(&'a self) -> &'a String {
+        self.value.as_ref().unwrap()
     }
 }
 

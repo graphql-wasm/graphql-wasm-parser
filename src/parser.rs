@@ -51,11 +51,13 @@ fn parse_definition(lexer: &mut Lexer) -> Result<Definition, ParsingError> {
 }
 
 fn parse_type_system_definition(lexer: &mut Lexer) -> Result<Definition, ParsingError> {
+    // this hear only for making sure the reference to the value lives long enough
+    let lookahead_token;
     let (token_kind, token_value) = if peek_description(lexer) {
-        let lookahead_token = lookahead_lexer(lexer)?;
+        lookahead_token = lookahead_lexer(lexer)?;
         (lookahead_token.kind, lookahead_token.get_value())
     } else {
-        (lexer.current_token().kind, lexer.current_token_value().to_string())
+        (lexer.current_token().kind, lexer.current_token_value())
     };
     if token_kind != NAME {
         return unexpected_token(token_kind, NAME);
@@ -545,8 +547,8 @@ fn parse_input_object_type_extension(lexer: &mut Lexer) -> Result<Definition, Pa
 fn parse_executable_definition(lexer: &mut Lexer) -> Result<Definition, ParsingError> {
     if peek(lexer, NAME) {
         let name_token = lexer.tokens.last().unwrap();
-        let name_value = name_token.value.as_ref().unwrap().as_ref();
-        return match name_value {
+        let name_value = name_token.value.as_ref().unwrap();
+        return match name_value.as_ref() {
             "query" | "mutation" | "subscription" => parse_operation_definition(lexer),
             "fragment" => parse_fragment_definition(lexer),
             _ => Err(ParsingError::new(&format!(
@@ -805,7 +807,7 @@ fn parse_field(lexer: &mut Lexer) -> Result<Field, ParsingError> {
 
 fn parse_name(lexer: &mut Lexer) -> Result<String, ParsingError> {
     let name_token = expect_token(lexer, NAME)?;
-    Ok(name_token.value.as_ref().unwrap().clone())
+    Ok(name_token.value.as_ref().unwrap().to_string())
 }
 
 fn peek(lexer: &mut Lexer, kind: TokenKind) -> bool {
