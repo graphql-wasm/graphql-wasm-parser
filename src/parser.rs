@@ -406,27 +406,13 @@ fn parse_type_system_extension(lexer: &mut Lexer) -> Result<Definition, ParsingE
     }
 
     match token.value.as_ref().unwrap().as_ref() {
-        "schema" => {
-            return parse_schema_extension(lexer);
-        }
-        "scalar" => {
-            return parse_scalar_type_extension(lexer);
-        }
-        "type" => {
-            return parse_object_type_extension(lexer);
-        }
-        "interface" => {
-            return parse_interface_type_extension(lexer);
-        }
-        "union" => {
-            return parse_union_type_extension(lexer);
-        }
-        "enum" => {
-            return parse_enum_type_extension(lexer);
-        }
-        "input" => {
-            return parse_input_object_type_extension(lexer);
-        }
+        "schema" => return parse_schema_extension(lexer),
+        "scalar" => return parse_scalar_type_extension(lexer),
+        "type" =>  return parse_object_type_extension(lexer),
+        "interface" => return parse_interface_type_extension(lexer),
+        "union" => return parse_union_type_extension(lexer),
+        "enum" => return parse_enum_type_extension(lexer),
+        "input" => return parse_input_object_type_extension(lexer),
         _ => return Err(ParsingError::new("unexpected")),
     }
 }
