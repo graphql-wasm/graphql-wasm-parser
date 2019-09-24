@@ -55,7 +55,7 @@ fn parse_type_system_definition(lexer: &mut Lexer) -> Result<Definition, Parsing
         let lookahead_token = lookahead_lexer(lexer)?;
         (lookahead_token.kind, lookahead_token.get_value())
     } else {
-        (lexer.current_token().kind, lexer.current_token_value())
+        (lexer.current_token().kind, lexer.current_token_value().to_string())
     };
     if token_kind != NAME {
         return unexpected_token(token_kind, NAME);
@@ -669,7 +669,8 @@ fn parse_value_value(lexer: &mut Lexer) -> Result<Value, ParsingError> {
 }
 
 fn parse_string_literal(lexer: &mut Lexer) -> Result<Value, ParsingError> {
-    let value = lexer.current_token_value();
+    // we know that the current token is STRING or BLOCK_STRING
+    let value = lexer.current_token_value().to_string();
     advance_lexer(lexer)?;
     Ok(Value::StringValue(value))
 }

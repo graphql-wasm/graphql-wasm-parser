@@ -31,6 +31,7 @@ pub enum TokenKind {
 pub struct LexerError {
     pub message: String,
 }
+
 impl LexerError {
     pub fn new(message: &str) -> LexerError {
         return LexerError {
@@ -87,9 +88,9 @@ impl<'a> Lexer {
         self.tokens.last().as_ref().expect("no tokens")
     }
 
-    pub fn current_token_value(&self) -> String {
+    pub fn current_token_value(&self) -> &String {
         let token = self.tokens.last().unwrap();
-        token.value.as_ref().unwrap().clone()
+        token.value.as_ref().unwrap()
     }
 
     pub fn current_token_value_safe(&self) -> Option<String> {
