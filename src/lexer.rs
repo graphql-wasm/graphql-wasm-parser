@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::ops::Index;
 use std::ops::Range;
+use std::ops::RangeFrom;
 use std::slice::Iter;
 use Result::*;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -41,20 +45,29 @@ impl LexerError {
 }
 
 #[derive(Debug)]
+pub struct Position {
+    pub name: String,
+    pub column: usize,
+    pub line: usize,
+}
+
+#[derive(Debug)]
 pub struct Token {
     pub kind: TokenKind,
     pub start: usize,
     pub end: usize,
     pub value: Option<String>,
+    pub position: Position,
 }
 
 impl Token {
-    pub fn simple_token(kind: TokenKind, index: usize) -> Token {
+    pub fn simple_token(kind: TokenKind, index: usize, position: Position) -> Token {
         Token {
             kind,
             start: index,
             end: index + 1,
             value: Option::None,
+            position,
         }
     }
 
@@ -65,9 +78,64 @@ impl Token {
 
 #[derive(Debug)]
 pub struct Lexer {
-    pub source: Vec<char>,
+    pub source: Box<dyn MultiSource>,
     pub current_index: usize,
     pub tokens: Vec<Token>,
+}
+
+pub trait MultiSource: Debug {
+    fn get(&self, index: usize) -> Option<char>;
+    fn range_string(&self, range: Range<usize>) -> String;
+    fn index_to_position(&self, index: usize) -> Position;
+    fn len(&self) -> usize;
+}
+
+#[derive(Debug)]
+struct Line {
+    number: usize,
+    start_index: usize,
+}
+
+#[derive(Debug)]
+pub struct OneStringSource {
+    chars: Vec<char>,
+}
+
+pub struct NamedStringSource {}
+
+impl MultiSource for OneStringSource {
+    fn get(&self, index: usize) -> Option<char> {
+        self.chars.get(index).map(|c| *c)
+    }
+
+    fn range_string(&self, range: Range<usize>) -> String {
+        self.chars.index(range).iter().cloned().collect::<String>()
+    }
+
+    fn index_to_position(&self, index: usize) -> Position {
+        let mut cur_line = 1;
+        let mut cur_col = 1;
+        let mut cur_index = 0;
+        while cur_index < index {
+            if self.chars[cur_index] == '\n' && cur_index < index {
+                cur_line += 1;
+                cur_col = 1;
+            } else {
+                cur_col += 1;
+            }
+            cur_index += 1;
+        }
+        let result = Position {
+            name: String::from("<single-source-string>"),
+            line: cur_line,
+            column: cur_col,
+        };
+        println!("calc: index: {}, result: {:?}", index, result);
+        result
+    }
+    fn len(&self) -> usize {
+        self.chars.len()
+    }
 }
 
 impl<'a> Lexer {
@@ -77,9 +145,16 @@ impl<'a> Lexer {
             start: 0,
             end: 0,
             value: Option::None,
+            position: Position {
+                name: String::from("<single-source-strin>"),
+                line: 1,
+                column: 1,
+            },
         };
         Lexer {
-            source: source_str.chars().collect(),
+            source: Box::new(OneStringSource {
+                chars: source_str.chars().collect(),
+            }),
             current_index: 0,
             tokens: vec![start_of_file_token],
         }
@@ -97,16 +172,16 @@ impl<'a> Lexer {
         let token = self.tokens.last().unwrap();
         match token.value.as_ref() {
             Some(s) => Some(s.clone()),
-            None => None 
+            None => None,
         }
     }
 
     pub fn prev_token(&self) -> &Token {
-        self.tokens.get(self.tokens.len()-2).unwrap()
+        self.tokens.get(self.tokens.len() - 2).unwrap()
     }
 
     pub fn prev_token_value(&self) -> String {
-        let token = self.tokens.get(self.tokens.len()-2).unwrap();
+        let token = self.tokens.get(self.tokens.len() - 2).unwrap();
         token.value.as_ref().unwrap().clone()
     }
 
@@ -118,26 +193,38 @@ impl<'a> Lexer {
 
     pub fn lookahead(&self) -> Result<Token, LexerError> {
         if self.tokens.last().unwrap().kind == TokenKind::END_OF_INPUT {
-            return Ok(Token::simple_token(TokenKind::END_OF_INPUT, self.source.len()))
+            return Ok(Token::simple_token(
+                TokenKind::END_OF_INPUT,
+                self.source.len(),
+                self.source.index_to_position(self.source.len() - 1),
+            ));
         }
         let position = self.position_after_whitespace();
         let new_token;
         if position == self.source.len() {
-            new_token = Token::simple_token(TokenKind::END_OF_INPUT, self.source.len());
-        }else {
+            new_token = Token::simple_token(
+                TokenKind::END_OF_INPUT,
+                self.source.len(),
+                self.source.index_to_position(self.source.len() - 1),
+            );
+        } else {
             new_token = self.read_token(position)?;
         }
         Ok(new_token)
     }
     pub fn advance(&mut self) -> Result<&Token, LexerError> {
         if self.tokens.last().unwrap().kind == TokenKind::END_OF_INPUT {
-            return Ok(self.tokens.last().unwrap())
+            return Ok(self.tokens.last().unwrap());
         }
         let position = self.position_after_whitespace();
         let new_token;
         if position == self.source.len() {
-            new_token = Token::simple_token(TokenKind::END_OF_INPUT, self.source.len());
-        }else {
+            new_token = Token::simple_token(
+                TokenKind::END_OF_INPUT,
+                self.source.len(),
+                self.source.index_to_position(self.source.len() - 1),
+            );
+        } else {
             new_token = self.read_token(position)?;
         }
         self.current_index = new_token.end;
@@ -145,68 +232,121 @@ impl<'a> Lexer {
         Ok(&self.tokens.last().expect(""))
     }
 
-    fn position_after_whitespace(&self) ->usize {
-        let chars = &self.source[self.current_index..];
-        let whitespaces_count = chars
-            .iter()
-            .take_while(Lexer::is_whitespace_or_ignored)
-            .count();
-        self.current_index + whitespaces_count
+    fn position_after_whitespace(&self) -> usize {
+        let count = self.count_while(self.current_index, |c| match c {
+            '\u{0020}' | '\u{0009}' | '\u{feff}' | ',' | '\n' | '\r' => true,
+            c => false,
+        });
+        self.current_index + count
     }
 
-    fn is_whitespace_or_ignored(c: &&char) -> bool {
-        match c {
-            '\u{0020}' | '\u{0009}' | '\u{feff}' | ',' => true,
-            _ => false,
+    fn count_while<F>(&self, start: usize, while_fn: F) -> usize
+    where
+        F: Fn(&char) -> bool,
+    {
+        let mut counter = 0;
+        while start + counter < self.source.len() {
+            let c = self.source.get(start + counter).unwrap();
+            if while_fn(&c) {
+                counter += 1;
+            } else {
+                break;
+            }
         }
+        counter
+    }
+    fn count_until<F>(&self, start: usize, predicate: F) -> usize
+    where
+        F: Fn(&char) -> bool,
+    {
+        let mut counter = 0;
+        while start + counter < self.source.len() {
+            let c = self.source.get(start + counter).unwrap();
+            if !predicate(&c) {
+                counter += 1;
+            } else {
+                break;
+            }
+        }
+        counter
+    }
+    fn collect_string_until<F>(
+        &self,
+        start: usize,
+        predicate: F,
+        include_ast_char: bool,
+    ) -> (String, usize)
+    where
+        F: Fn(&char) -> bool,
+    {
+        let mut string = String::new();
+        let mut counter = 0;
+        while start + counter < self.source.len() {
+            let c = self.source.get(start + counter).unwrap();
+            if !predicate(&c) {
+                string.push(c);
+                counter += 1;
+            } else {
+                if (include_ast_char) {
+                    counter += 1;
+                }
+                break;
+            }
+        }
+        (string, counter)
     }
 
     fn read_token(&self, index: usize) -> Result<Token, LexerError> {
-        let c = self.source[index];
+        let c = self.source.get(index).unwrap();
+        let position = self.source.index_to_position(index);
         let new_token = match c {
-            '{' => Ok(Token::simple_token(TokenKind::BRACE_L, index)),
-            '}' => Ok(Token::simple_token(TokenKind::BRACE_R, index)),
-            '!' => Ok(Token::simple_token(TokenKind::BANG, index)),
-            '|' => Ok(Token::simple_token(TokenKind::PIPE, index)),
-            ':' => Ok(Token::simple_token(TokenKind::COLON, index)),
-            '[' => Ok(Token::simple_token(TokenKind::BRACKET_L, index)),
-            ']' => Ok(Token::simple_token(TokenKind::BRACKET_R, index)),
-            '$' => Ok(Token::simple_token(TokenKind::DOLLAR, index)),
-            '@' => Ok(Token::simple_token(TokenKind::AT, index)),
-            '&' => Ok(Token::simple_token(TokenKind::AMP, index)),
-            '(' => Ok(Token::simple_token(TokenKind::PAREN_L, index)),
-            ')' => Ok(Token::simple_token(TokenKind::PAREN_R, index)),
-            '=' => Ok(Token::simple_token(TokenKind::EQUALS, index)),
+            '{' => Ok(Token::simple_token(TokenKind::BRACE_L, index, position)),
+            '}' => Ok(Token::simple_token(TokenKind::BRACE_R, index, position)),
+            '!' => Ok(Token::simple_token(TokenKind::BANG, index, position)),
+            '|' => Ok(Token::simple_token(TokenKind::PIPE, index, position)),
+            ':' => Ok(Token::simple_token(TokenKind::COLON, index, position)),
+            '[' => Ok(Token::simple_token(TokenKind::BRACKET_L, index, position)),
+            ']' => Ok(Token::simple_token(TokenKind::BRACKET_R, index, position)),
+            '$' => Ok(Token::simple_token(TokenKind::DOLLAR, index, position)),
+            '@' => Ok(Token::simple_token(TokenKind::AT, index, position)),
+            '&' => Ok(Token::simple_token(TokenKind::AMP, index, position)),
+            '(' => Ok(Token::simple_token(TokenKind::PAREN_L, index, position)),
+            ')' => Ok(Token::simple_token(TokenKind::PAREN_R, index, position)),
+            '=' => Ok(Token::simple_token(TokenKind::EQUALS, index, position)),
             '\"' => self.read_string_or_block_string(index),
             '.' => self.read_spread(index),
             'A'..='Z' | '_' | 'a'..='z' => Ok(self.read_name(index)),
             '0'..='9' | '-' => self.read_number(index),
             '#' => Ok(self.read_comment(index)),
-            _ => panic!("unexpected char '{}'", c.escape_unicode()),
+            _ => panic!(
+                "unexpected char '{}' at position {:?}",
+                c.escape_unicode(),
+                position
+            ),
         }?;
 
         Ok(new_token)
     }
 
-    fn read_spread(&self,index: usize) -> Result<Token, LexerError> {
+    fn read_spread(&self, index: usize) -> Result<Token, LexerError> {
         // we have at least a .
-        let mut iter = (&self.source[index+ 1..]).iter();
-        let next_char_1 = iter.next();
+        let next_char_1 = self.source.get(index + 2);
         Lexer::expect_char(next_char_1, '.')?;
-        let next_char_2 = iter.next();
+        let next_char_2 = self.source.get(index + 2);
         Lexer::expect_char(next_char_2, '.')?;
         Ok(Token {
             kind: TokenKind::SPREAD,
             start: index,
             end: index + 3,
             value: None,
+            position: self.source.index_to_position(index),
         })
     }
-    fn expect_char(c: Option<&char>, expected_char: char) -> Result<(), LexerError> {
+    fn expect_char(c: Option<char>, expected_char: char) -> Result<(), LexerError> {
         match c {
             None => Err(LexerError::new("Unexpected char")),
             Some(actual_char) => {
-                if *actual_char != expected_char {
+                if actual_char != expected_char {
                     Err(LexerError::new("Unexpected char"))
                 } else {
                     Ok(())
@@ -215,40 +355,37 @@ impl<'a> Lexer {
         }
     }
 
-    fn read_comment(&self,index: usize) -> Token {
-        let mut value = String::new();
+    fn read_comment(&self, index: usize) -> Token {
         // we have at least `#`
-        let iter = (&self.source[index + 1..]).iter();
-        let mut counter = 1;
-        for c in iter {
-            match *c {
-                '\u{000A}' | '\u{000D}' => {
-                    counter += 1;
-                    break;
-                }
-                _ => {
-                    counter += 1;
-                    value.push(*c);
-                }
-            }
-        }
+        let (value, counter) = self.collect_string_until(
+            index + 1,
+            |c| match *c {
+                '\u{000A}' | '\u{000D}' => true,
+                _ => false,
+            },
+            true,
+        );
         Token {
             kind: TokenKind::COMMENT,
             start: index,
-            end: index + counter,
+            end: index + counter + 1,
             value: Option::Some(value),
+            position: self.source.index_to_position(index),
         }
     }
 
-    fn read_name(&self,index: usize) -> Token {
-        let string = &self.source[index..];
+    fn read_name(&self, index: usize) -> Token {
         let mut name_string = String::new();
         let mut counter = 0;
-        for c in string.iter() {
-            match *c {
+        loop {
+            let c = match self.source.get(index + counter) {
+                None => break,
+                Some(c) => c,
+            };
+            match c {
                 '_' | '0'..='9' | 'A'..='Z' | 'a'..='z' => {
                     counter += 1;
-                    name_string.push(*c);
+                    name_string.push(c);
                 }
                 _ => break,
             }
@@ -258,21 +395,22 @@ impl<'a> Lexer {
             start: index,
             end: index + counter,
             value: Option::Some(name_string),
+            position: self.source.index_to_position(index),
         }
     }
 
-    fn read_number(&self,index: usize) -> Result<Token, LexerError> {
-        let first_code = self.source[index];
+    fn read_number(&self, index: usize) -> Result<Token, LexerError> {
+        let first_code = self.source.get(index).unwrap();
         let mut code = Option::Some(first_code);
         let mut position = index;
         let mut is_float = false;
         if code.is_some() && code.unwrap() == '-' {
             position += 1;
-            code = self.source.get(position).map(|c| *c);
+            code = self.source.get(position);
         };
         if code.is_some() && code.unwrap() == '0' {
             position += 1;
-            code = self.source.get(position).map(|c| *c);
+            code = self.source.get(position);
             if code.is_some() {
                 if code.unwrap() >= '0' && code.unwrap() <= '9' {
                     return Err(LexerError::new(&format!("invalid char {}", code.unwrap())));
@@ -280,29 +418,26 @@ impl<'a> Lexer {
             }
         } else {
             position = self.assert_and_read_digits(position, code)?;
-            code = self.source.get(position).map(|c| *c);
+            code = self.source.get(position);
         }
         if code.is_some() && code.unwrap() == '.' {
             is_float = true;
             position += 1;
-            code = self.source.get(position).map(|c| *c);
+            code = self.source.get(position);
             position = self.assert_and_read_digits(position, code)?;
-            code = self.source.get(position).map(|c| *c);
+            code = self.source.get(position);
         }
         if code.is_some() && (code.unwrap() == 'E' || code.unwrap() == 'e') {
             is_float = true;
             position += 1;
-            code = self.source.get(position).map(|c| *c);
+            code = self.source.get(position);
             if code.is_some() && code.unwrap() == '+' || code.unwrap() == '-' {
                 position += 1;
-                code = self.source.get(position).map(|c| *c);
+                code = self.source.get(position);
             }
             position = self.assert_and_read_digits(position, code)?;
         }
-        let value: String = self.source[index..position]
-            .iter()
-            .cloned()
-            .collect::<String>();
+        let value: String = self.source.range_string(index..position);
         Ok(Token {
             kind: if is_float {
                 TokenKind::FLOAT
@@ -312,9 +447,9 @@ impl<'a> Lexer {
             start: index,
             end: position,
             value: Option::Some(value),
+            position: self.source.index_to_position(index),
         })
     }
-
 
     fn assert_and_read_digits(
         &self,
@@ -332,12 +467,14 @@ impl<'a> Lexer {
                 first_code.unwrap()
             )));
         }
-        let string = &self.source[start..];
-        let iter = string.iter();
-        Ok(iter.take_while(|&&c| c >= '0' && c <= '9').count() + start)
+        let counter = self.count_while(start, |c: &char| match *c {
+            '0'..='9' => true,
+            _ => false,
+        });
+        Ok(start + counter)
     }
 
-    fn read_string_or_block_string(&self, index:usize) -> Result<Token, LexerError> {
+    fn read_string_or_block_string(&self, index: usize) -> Result<Token, LexerError> {
         if self.is_triple_quote(index) {
             return self.read_block_string(index);
         } else {
@@ -345,51 +482,48 @@ impl<'a> Lexer {
         }
     }
 
-    fn read_string(&self,index: usize) -> Result<Token, LexerError> {
+    fn read_string(&self, index: usize) -> Result<Token, LexerError> {
         // we have at least "
-        let string = &self.source[index + 1..];
         let mut value = String::new();
 
         let mut counter = 1;
-        for c in string.iter() {
-            counter += 1;
-            if *c == '"' {
+        while index + counter < self.source.len() {
+            let c = self.source.get(index + counter).unwrap();
+            if c == '"' {
                 return Ok(Token {
                     kind: TokenKind::STRING,
                     start: index,
-                    end: index + counter,
+                    end: index + counter + 1,
                     value: Option::Some(value),
+                    position: self.source.index_to_position(index),
                 });
             }
-            if *c < '\u{0020}' && *c != '\u{0009}' {
+            if c < '\u{0020}' && c != '\u{0009}' {
                 return Err(LexerError::new("not allowed char in String"));
             }
-            value.push(*c);
+            value.push(c);
+            counter += 1;
         }
         Err(LexerError::new("Unterminated string."))
     }
 
-    fn read_block_string(&self,index:usize) -> Result<Token, LexerError> {
+    fn read_block_string(&self, index: usize) -> Result<Token, LexerError> {
         // we know it starts with triple quote
         let mut position = index + 3;
         let mut chunk_start = position;
         let mut raw_value = String::new();
         while position < self.source.len() {
             if self.is_triple_quote(position) {
-                raw_value.push_str(
-                    &self.source[chunk_start..position]
-                        .iter()
-                        .cloned()
-                        .collect::<String>(),
-                );
+                raw_value.push_str(&self.source.range_string(chunk_start..position));
                 return Ok(Token {
                     kind: TokenKind::BLOCK_STRING,
                     start: index,
-                    end: position+3,
+                    end: position + 3,
                     value: Option::Some(raw_value),
+                    position: self.source.index_to_position(index),
                 });
             }
-            let code = self.source[position];
+            let code = self.source.get(position).unwrap();
             if code < '\u{0020}' && code != '\u{0009}' && code != '\u{000a}' && code != '\u{000d}' {
                 return Err(LexerError::new(&format!(
                     "Invalid character within String: {}.",
@@ -406,12 +540,7 @@ impl<'a> Lexer {
                     position += 1;
                 }
             } else if code == '\u{005c}' && self.is_triple_quote(position + 1) {
-                raw_value.push_str(
-                    &self.source[chunk_start..position]
-                        .iter()
-                        .cloned()
-                        .collect::<String>(),
-                );
+                raw_value.push_str(&self.source.range_string(chunk_start..position));
                 raw_value.push_str("\"\"\"");
                 position += 4;
                 chunk_start = position;
@@ -426,14 +555,14 @@ impl<'a> Lexer {
         if !(position + 2 < self.source.len()) {
             return false;
         }
-        self.source[position] == '"'
-            && self.source[position + 1] == '"'
-            && self.source[position + 2] == '"'
+        self.source.get(position).unwrap() == '"'
+            && self.source.get(position + 1).unwrap() == '"'
+            && self.source.get(position + 2).unwrap() == '"'
     }
 
     fn char_equal_at(&self, position: usize, c: char) -> bool {
         match self.source.get(position) {
-            Some(value) => *value == c,
+            Some(value) => value == c,
             None => false,
         }
     }
@@ -633,5 +762,44 @@ mod tests {
         assert_eq!(integer_token.kind, TokenKind::INT);
         let value = integer_token.value.as_ref().expect("");
         assert_eq!(value, "-4");
+    }
+
+    #[test]
+    fn correct_position() {
+        let mut lexer = Lexer::new(
+            r" #comment1
+        query {
+          #comment2
+            field #comment3
+                #comment4
+
+    }
+        ",
+        );
+        lexer.advance_all();
+        assert_eq!(lexer.tokens.len(), 10);
+        assert_eq!(lexer.tokens[1].position.line, 1);
+        assert_eq!(lexer.tokens[1].position.column, 2);
+
+        assert_eq!(lexer.tokens[2].position.line, 2);
+        assert_eq!(lexer.tokens[2].position.column, 9);
+
+        assert_eq!(lexer.tokens[3].position.line, 2);
+        assert_eq!(lexer.tokens[3].position.column, 15);
+
+        assert_eq!(lexer.tokens[4].position.line, 3);
+        assert_eq!(lexer.tokens[4].position.column, 11);
+
+        assert_eq!(lexer.tokens[5].position.line, 4);
+        assert_eq!(lexer.tokens[5].position.column, 13);
+
+        assert_eq!(lexer.tokens[6].position.line, 4);
+        assert_eq!(lexer.tokens[6].position.column, 19);
+
+        assert_eq!(lexer.tokens[7].position.line, 5);
+        assert_eq!(lexer.tokens[7].position.column, 17);
+
+        assert_eq!(lexer.tokens[8].position.line, 7);
+        assert_eq!(lexer.tokens[8].position.column, 5);
     }
 }
